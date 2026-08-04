@@ -108,14 +108,14 @@ def main(input_list_name, error_checking):
             
             with contextlib.redirect_stdout(None):
 
-                print(start_date, model_name)
+                
                 sep_date, jsonfname, event_dict_csv, op_outpath, op_plotpath = opsep.run_opsep(
                     start_date, end_date, experiment, json_mode='forecast',
                     flux_type=flux_type, user_name=model_name, user_file=user_file, json_type=json_type,
                     spase_id=spase_id, showplot=showplot, saveplot=saveplot, detect_prev_event=detect_prev_event,
                     doBGSubOPSEP=doBGSub, doBGSubIDSEP=doBGSub,
                     two_peaks=two_peaks, dointerp=False, user_thresholds = user_thresholds,
-                    path_to_output=full_path, use_absolute_datapath=True
+                    path_to_output=full_path, directory_depth = 0
                 )
 
 
@@ -136,8 +136,19 @@ def main(input_list_name, error_checking):
                 
                 
                 processed_json_name = os.path.join(op_outpath, json_files[i].rsplit('/json/')[1].rsplit('.json')[0] + '_preproc.json')
-                ccmc.write_json(injson,processed_json_name)
-                os.remove(jsonfname)
+                
+            for blocks in injson['sep_forecast_submission']['forecasts']:
+                    current_profile = blocks['sep_profile']
+                    energy_string = current_profile.rsplit('.')[3]
+                    renamed_profile = json_files[i].rsplit('/json/')[1].rsplit('.json')[0] + '.' + energy_string + 'MeV.txt'
+                    blocks['sep_profile'] = renamed_profile
+                    try:
+                        os.replace(os.path.join(op_outpath, current_profile), os.path.join(op_outpath, renamed_profile))
+                    except:
+                        os.rename(os.path.join(op_outpath, current_profile), os.path.join(op_outpath, renamed_profile))
+
+            ccmc.write_json(injson, processed_json_name)
+            os.remove(jsonfname)
 
             if error_checking:
                 
@@ -150,6 +161,7 @@ def main(input_list_name, error_checking):
 
             plt.close('all')
             opsep = reload(opsep)
+            input()
             
             
 

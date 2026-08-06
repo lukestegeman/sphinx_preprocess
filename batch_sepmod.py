@@ -161,7 +161,6 @@ def main(input_list_name, error_checking):
 
             plt.close('all')
             opsep = reload(opsep)
-            input()
             
             
 

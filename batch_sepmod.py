@@ -9,6 +9,7 @@ import os
 import io
 import contextlib
 import warnings
+import fnmatch
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 #Quickly adding the location of fetchsep to the path to do the imports then delete it from the path 
@@ -25,7 +26,7 @@ del temp
 
 global outpath
 
-sys.stdout = open(os.devnull, 'w')
+#sys.stdout = open(os.devnull, 'w')
 
 
 ############## SET DEFAULTS ##################
@@ -34,7 +35,7 @@ saveplot = False
 detect_prev_event_default = False #Set to true if get FirstStart flag
 two_peaks_default = False #Set to true if get ShortEvent flag
 
-gl_outpath = __import__('pipeline_config').CODE_DIR + '/preprocess/SEPMOD' #setting up where I want to put the files
+gl_outpath = __import__('pipeline_config').DATA_DIR + '/prepared_forecasts/SEPMOD' #setting up where I want to put the files
 ############## END DEFAULTS #################
 
 
@@ -50,8 +51,8 @@ def main(input_list_name, error_checking):
     del temp
     # suppressing the output of opsep - most of the output we are interested in for this use
     # case is done with the --ErrorCheck flag
-    with contextlib.redirect_stdout(io.StringIO()) and contextlib.suppress(SystemExit):
-        start_dates, end_dates, experiments, flux_types, flags, \
+    #with contextlib.redirect_stdout(io.StringIO()) and contextlib.suppress(SystemExit):
+    start_dates, end_dates, experiments, flux_types, flags, \
             model_names, user_files, json_types, options, bgstart,\
             bgend, json_files, issue_times, trigger_arrays, profile_names = make_sepmod_list(input_list_name)
 
@@ -109,9 +110,9 @@ def main(input_list_name, error_checking):
             #opsep.outpath = full_path #Set via arguments
             # again suppressing output here
             
-            with contextlib.redirect_stdout(io.StringIO()) and contextlib.suppress(SystemExit):
+            #with contextlib.redirect_stdout(io.StringIO()) and contextlib.suppress(SystemExit):
                 
-                outputs = opsep.run_opsep(
+            outputs = opsep.run_opsep(
                     start_date, end_date, experiment, json_mode='forecast',
                     flux_type=flux_type, user_name=model_name, user_file=user_file, json_type=json_type,
                     spase_id=spase_id, showplot=showplot, saveplot=saveplot, detect_prev_event=detect_prev_event,
@@ -122,42 +123,43 @@ def main(input_list_name, error_checking):
                 # opsep.run_opsep NOW RETURNS A SINGLE DICT INSTEAD OF 5
                 # POSITIONAL VALUES. UNPACKED HERE BY KEY, PRESERVING THE
                 # SAME LOCAL VARIABLE NAMES USED BELOW.
-                sep_date = outputs["sep_date"]
-                jsonfname = outputs["jsonfname"]
-                event_dict_csv = outputs["event_dict_csv"]
-                op_outpath = outputs["opsep_outpath"]
-                op_plotpath = outputs["opsep_plotpath"]
+            sep_date = outputs["sep_date"]
+            print(sep_date)
+            jsonfname = outputs["jsonfname"]
+            event_dict_csv = outputs["event_dict_csv"]
+            op_outpath = outputs["opsep_outpath"]
+            op_plotpath = outputs["opsep_plotpath"]
 
-                """
+            """
                 sep_year, sep_month, \
                 sep_day, jsonfname = opsep.run_all(start_date, end_date,
                     experiment, flux_type, model_name, user_file, json_type,
                     spase_id, showplot, saveplot, detect_prev_event,
                     two_peaks, False, '', option, doBGSub, bgstartdate,
                     bgenddate, nointerp)
-                """
+            """
                 
                 #Update SEPMOD json with the realtime info from the jsons
                 #prepared by CCMC for the Scoreboard
-                injson = ccmc.read_in_json(jsonfname)
-                injson['sep_forecast_submission']['issue_time'] = issue_times[i]
-                injson['sep_forecast_submission'].update({'triggers':trigger_arrays[i]})
+            injson = ccmc.read_in_json(jsonfname)
+            injson['sep_forecast_submission']['issue_time'] = issue_times[i]
+            injson['sep_forecast_submission'].update({'triggers':trigger_arrays[i]})
                 
                 
-                processed_json_name = os.path.join(op_outpath, json_files[i].rsplit('/json/')[1].rsplit('.json')[0] + '_preproc.json')
+            processed_json_name = os.path.join(outpath, json_year, json_month, json_files[i].rsplit('/json/')[1].rsplit('.json')[0] + '.json')
                 
-                for blocks in injson['sep_forecast_submission']['forecasts']:
+            for blocks in injson['sep_forecast_submission']['forecasts']:
                     current_profile = blocks['sep_profile']
                     energy_string = current_profile.rsplit('.')[3]
                     renamed_profile = json_files[i].rsplit('/json/')[1].rsplit('.json')[0] + '.' + energy_string + 'MeV.txt'
                     blocks['sep_profile'] = renamed_profile
                     try:
-                        os.replace(os.path.join(op_outpath, current_profile), os.path.join(op_outpath, renamed_profile))
+                        os.replace(os.path.join(op_outpath, current_profile), os.path.join(outpath, json_year, json_month, renamed_profile))
                     except:
-                        os.rename(os.path.join(op_outpath, current_profile), os.path.join(op_outpath, renamed_profile))
+                        os.rename(os.path.join(op_outpath, current_profile), os.path.join(outpath, json_year, json_month, renamed_profile))
 
-                ccmc.write_json(injson, processed_json_name)
-                os.remove(jsonfname)
+            ccmc.write_json(injson, processed_json_name)
+            os.remove(jsonfname)
 
             if error_checking:
                 
@@ -178,7 +180,7 @@ def main(input_list_name, error_checking):
             logger.exception('opsep failed with exception')
             # this log will just include content in sys.exit
             logger.error(str(e))
-            
+
             fout.write(json_files[i] + ',')
             fout.write(str(start_date) +',' + '\"' + str(e) + '\"' )
             fout.write('\n')
@@ -217,15 +219,18 @@ def make_sepmod_list(input_list_name):
     bgenddate = ''
     # print(os.path.isfile(input_list_name))
     preprocess_list = open(input_list_name)
-    for json_file in preprocess_list:
+    pattern = '*SEPMOD*'
+    sepmod_list = fnmatch.filter(preprocess_list, pattern)
+    print('sepmod_list', sepmod_list)
+    for json_file in sepmod_list:
         json_file = json_file.rstrip()
         json_exists = os.path.isfile(json_file)
-#        print(json_file, json_exists)
+        #print(json_file, json_exists)
         # print(json_exists)
         #if not json_exists:
         #    logger.info('JSON file not found ' + str(json_file))
-        if json_exists and 'SEPMOD' in json_file:
-            # print(json_file)
+        if json_exists:
+            print(json_file)
             start_date = ''
             end_date = ''
             issue_time = ''
@@ -239,26 +244,33 @@ def make_sepmod_list(input_list_name):
             profiles = [injson['sep_forecast_submission']['forecasts'][0]['sep_profile'], \
                         injson['sep_forecast_submission']['forecasts'][1]['sep_profile']]
             #print(profiles)
-        
-            
+       
+
+            user_file = None
             sepmod_directory = json_file.rsplit('/json')[0] + '/json/data/'
             # print(sepmod_directory)
             for root, dirs, files in os.walk(sepmod_directory):
                #  print(root, dirs, files)
-            
+
                 # start_date = ''
                 # end_date = ''
                 # issue_time = ''
                 # triggers = []
                 for file in files:
                    #  print(file)
-                    if file.endswith("geo_integral_tseries_timestamped"): 
+                    if file.endswith("geo_integral_tseries_timestamped"):
                         sepmod_fname = os.path.join(root, file)
                         user_file = sepmod_fname
-                    # print(user_file, '------------------------------')
-                    
-        
-            start_dates.append(str(pred_st))
+                        print(user_file, '------------------------------')
+                        print(os.path.isfile(user_file))
+
+            if user_file is None:
+                logger.warning('make_sepmod_list: No geo_integral_tseries_timestamped '
+                    'file found under ' + sepmod_directory + ' for ' + json_file
+                    + '. Skipping this SEPMOD entry.')
+                continue
+
+            start_dates.append(str(pred_st)) 
             end_dates.append(str(pred_end))
             experiments.append(experiment)
             flux_types.append(flux_type)
